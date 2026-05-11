@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import fetch from 'node-fetch';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,21 @@ async function restFallback(){
 }
 setInterval(restFallback,5000);
 setTimeout(restFallback,2000);
+
+// Liveness watchdog. Binance's depth/aggTrade stream sometimes goes
+// quiet without firing 'close' or 'error', leaving state.connected
+// stuck at true while no compute() runs. If lastUpdate is older than
+// 30s, force the connection to recycle.
+setInterval(() => {
+  if (!state.lastUpdate) return;
+  const ageMs = Date.now() - new Date(state.lastUpdate).getTime();
+  if (ageMs > 30000) {
+    console.warn('[watchdog] stream silent for ' + (ageMs / 1000).toFixed(0) + 's — reconnecting');
+    state.connected = false;
+    try { binanceWS && binanceWS.terminate(); } catch (e) {}
+    connectBinance();
+  }
+}, 10000);
 
 function processDepth(d){
   const bids=(d.bids||d.b||[]).slice(0,10).map(b=>({p:parseFloat(b[0]),s:parseFloat(b[1])}));
@@ -124,12 +140,20 @@ function getVerdict(score){
   if(score>=40)return['MILD BEAR','Light sell pressure — proceed with caution'];
   return['BEARISH','Strong downward pressure — sell side dominant'];
 }
+// Local JSONL log alongside the Supabase write. Same 30s debounce, but
+// always-on (no env var needed). Used by the polymarket backtest harness
+// to pair model signals with realized BTC moves 15 min later.
+const LOG_DIR = join(__dirname, '..', 'logs');
+const LOG_FILE = join(LOG_DIR, 'snapshots.jsonl');
+if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
 let lastLogTime=0,lastLogScore=null;
 async function maybeLog(score,verdict,composite,imbalance,buyPct,spreadPct){
-  if(!supabase)return;
   const now=Date.now();
   if(now-lastLogTime<30000&&score===lastLogScore)return;
   lastLogTime=now;lastLogScore=score;
+  const row={ts:new Date(now).toISOString(),score,verdict,composite,price:state.price,imbalance,buy_pct:buyPct,spread_pct:spreadPct,tick_dir:state.tickDir};
+  try{appendFileSync(LOG_FILE, JSON.stringify(row)+'\n');}catch(e){}
+  if(!supabase)return;
   try{await supabase.from('btc_momentum').insert({score,verdict,composite,price:state.price,imbalance,buy_pct:buyPct,spread_pct:spreadPct,tick_dir:state.tickDir});}catch(e){}
 }
 function broadcast(data){
