@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Momentum 15min</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{--bg:#0d0d0d;--bg2:#141414;--bg3:#1a1a1a;--border:rgba(255,255,255,0.07);--text:#e8e8e8;--muted:#666;--dim:#444;--green:#1D9E75;--red:#D85A30;--font:'SF Mono','Fira Code','Consolas',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px}
+.layout{max-width:1100px;margin:0 auto;padding:1.5rem}
+.topbar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:1rem}
+.logo{font-size:11px;letter-spacing:.15em;color:var(--muted);text-transform:uppercase}
+.price-wrap{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.price-big{font-size:36px;font-weight:300;letter-spacing:-.02em}
+.status-pill{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:4px 10px;border-radius:20px}
+.dot{width:5px;height:5px;border-radius:50%}
+.dot-live{background:var(--green);animation:pulse 2s infinite}
+.dot-dead{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:1rem}
+.cell{background:var(--bg2);padding:.75rem 1rem}
+.cell-label{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:5px}
+.cell-val{font-size:18px}
+.momentum-block{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1.25rem;margin-bottom:1rem}
+.gauge-track{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-bottom:4px}
+.gauge-fill{height:3px;border-radius:2px;transition:width .5s,background .5s}
+.gauge-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:6px}
+.score-row{display:flex;align-items:center;gap:16px;margin-bottom:1rem}
+.score-num{font-size:48px;font-weight:200;line-height:1}
+.verdict-text{font-size:20px}
+.detail-text{font-size:12px;color:var(--muted);margin-top:4px}
+.sigs{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:1rem}
+.sig{background:var(--bg3);padding:.5rem .75rem}
+.sig-lbl{font-size:9px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin-bottom:3px}
+.sig-val{font-size:14px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.ob-block{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1rem}
+.ob-header{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+.ob-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;position:relative;padding:2px 4px}
+.ob-bar-bg{position:absolute;top:0;bottom:0;border-radius:2px;opacity:.12}
+.ob-size{color:var(--muted);font-size:11px;position:relative;z-index:1}
+.ob-price{position:relative;z-index:1}
+.chart-block{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1rem;margin-bottom:1rem}
+.chart-header{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:10px}
+.poly-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.poly-card{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1rem}
+.poly-q{font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5}
+.poly-nums{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.poly-odds{font-size:22px;font-weight:300}
+.poly-bar-track{height:2px;background:var(--bg3);border-radius:1px;margin-bottom:6px}
+.poly-bar-fill{height:2px;border-radius:1px;transition:width .4s}
+.poly-signal{font-size:11px;color:var(--muted);line-height:1.4}
+.poly-edit{display:flex;gap:6px;margin-top:8px}
+.poly-edit input{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:11px;padding:3px 6px;border-radius:3px;width:70px}
+.poly-edit button{background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--font);font-size:10px;padding:3px 8px;border-radius:3px;cursor:pointer}
+.poly-edit button:hover{border-color:var(--text);color:var(--text)}
+.footer{display:flex;justify-content:space-between;padding-top:1rem;border-top:1px solid var(--border);color:var(--dim);font-size:10px}
+.up{color:var(--green)}.dn{color:var(--red)}.neu{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="topbar">
+    <div>
+      <div class="logo">BTC Momentum · 15-min signal</div>
+      <div class="price-wrap">
+        <div class="price-big" id="btc-price">—</div>
+        <div class="neu" id="btc-delta">connecting...</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+      <div class="status-pill"><span class="dot dot-dead" id="status-dot"></span><span id="status-txt">connecting</span></div>
+      <div style="color:var(--dim);font-size:10px" id="timestamp">—</div>
+    </div>
+  </div>
+  <div class="grid4">
+    <div class="cell"><div class="cell-label">Spread</div><div class="cell-val" id="spread">—</div></div>
+    <div class="cell"><div class="cell-label">OB imbalance</div><div class="cell-val" id="imbalance">—</div></div>
+    <div class="cell"><div class="cell-label">Buy pressure</div><div class="cell-val" id="buy-pct">—</div></div>
+    <div class="cell"><div class="cell-label">Tick direction</div><div class="cell-val" id="tick-dir">—</div></div>
+  </div>
+  <div class="momentum-block">
+    <div class="gauge-labels"><span>bear</span><span>neutral</span><span>bull</span></div>
+    <div class="gauge-track"><div class="gauge-fill" id="gauge" style="width:50%;background:var(--muted)"></div></div>
+    <div style="height:10px"></div>
+    <div class="score-row">
+      <div class="score-num" id="score">—</div>
+      <div><div class="verdict-text" id="verdict">—</div><div class="detail-text" id="detail">waiting for data</div></div>
+    </div>
+    <div class="sigs">
+      <div class="sig"><div class="sig-lbl">OB delta</div><div class="sig-val neu" id="sig-ob">—</div></div>
+      <div class="sig"><div class="sig-lbl">Trade flow</div><div class="sig-val neu" id="sig-flow">—</div></div>
+      <div class="sig"><div class="sig-lbl">Depth ratio</div><div class="sig-val neu" id="sig-depth">—</div></div>
+      <div class="sig"><div class="sig-lbl">Spread</div><div class="sig-val neu" id="sig-spread">—</div></div>
+      <div class="sig"><div class="sig-lbl">Tick dir</div><div class="sig-val neu" id="sig-tick">—</div></div>
+      <div class="sig"><div class="sig-lbl">Poly signal</div><div class="sig-val neu" id="sig-poly">—</div></div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="ob-block"><div class="ob-header">asks (sell wall)</div><div id="asks-list"></div></div>
+    <div class="ob-block"><div class="ob-header">bids (buy wall)</div><div id="bids-list"></div></div>
+  </div>
+  <div class="chart-block">
+    <div class="chart-header">price + composite flow · last 60 ticks</div>
+    <div style="position:relative;height:140px"><canvas id="chart" role="img" aria-label="BTC price and flow"></canvas></div>
+  </div>
+  <div class="poly-row">
+    <div class="poly-card">
+      <div class="poly-q">BTC dip to $78k — May 11-17</div>
+      <div class="poly-nums">
+        <div><span style="font-size:11px;color:var(--muted)">NO </span><span class="poly-odds" id="p78-odds">60c</span></div>
+        <div class="up" id="p78-pct">91.0%</div>
+      </div>
+      <div class="poly-bar-track"><div class="poly-bar-fill" id="p78-bar" style="width:91%;background:var(--green)"></div></div>
+      <div class="poly-signal" id="p78-signal">—</div>
+      <div class="poly-edit">
+        <input type="number" id="p78-price-in" placeholder="price c" step="0.5">
+        <input type="number" id="p78-pct-in" placeholder="implied %" step="0.1">
+        <button onclick="updatePoly('dip78')">update</button>
+      </div>
+    </div>
+    <div class="poly-card">
+      <div class="poly-q">BTC reach $84k — May 11-17</div>
+      <div class="poly-nums">
+        <div><span style="font-size:11px;color:var(--muted)">NO </span><span class="poly-odds" id="p84-odds">62c</span></div>
+        <div class="up" id="p84-pct">91.8%</div>
+      </div>
+      <div class="poly-bar-track"><div class="poly-bar-fill" id="p84-bar" style="width:91.8%;background:var(--green)"></div></div>
+      <div class="poly-signal" id="p84-signal">—</div>
+      <div class="poly-edit">
+        <input type="number" id="p84-price-in" placeholder="price c" step="0.5">
+        <input type="number" id="p84-pct-in" placeholder="implied %" step="0.1">
+        <button onclick="updatePoly('reach84')">update</button>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>binance ws · polymarket manual · composite signal</span><span id="ts2">—</span></div>
+</div>
+<script>
+let chart;
+function initChart(){
+  const ctx=document.getElementById('chart').getContext('2d');
+  chart=new Chart(ctx,{type:'line',data:{labels:Array(60).fill(''),datasets:[
+    {label:'Price',data:Array(60).fill(null),borderColor:'#378ADD',borderWidth:1.5,pointRadius:0,tension:.3,yAxisID:'y'},
+    {label:'Flow',data:Array(60).fill(0),borderColor:'#1D9E75',borderWidth:1,pointRadius:0,tension:.3,yAxisID:'y2',fill:true,backgroundColor:'rgba(29,158,117,0.06)'}
+  ]},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},
+  scales:{x:{display:false},y:{position:'left',grid:{color:'rgba(255,255,255,0.04)'},ticks:{font:{size:10,family:'monospace'},color:'#555',maxTicksLimit:4,callback:v=>'$'+v.toLocaleString()}},y2:{position:'right',display:false}}}});
+}
+function scoreColor(s){return s>=65?'#1D9E75':s>=55?'#5DCAA5':s>=45?'#888':s>=35?'#EF9F27':'#D85A30'}
+function cls(v){return v>0.05?'up':v<-0.05?'dn':'neu'}
+function fmtSig(v){return(v>=0?'+':'')+(v*100).toFixed(0)}
+function render(d){
+  const p=d.price,delta=d.prevPrice?p-d.prevPrice:0,pct=d.prevPrice?(delta/d.prevPrice*100):0;
+  document.getElementById('btc-price').textContent='$'+p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dEl=document.getElementById('btc-delta');
+  dEl.textContent=(delta>=0?'+':'')+'$'+delta.toFixed(2)+' ('+pct.toFixed(3)+'%)';
+  dEl.className=delta>0?'up':delta<0?'dn':'neu';
+  document.getElementById('timestamp').textContent=new Date(d.ts).toLocaleTimeString();
+  document.getElementById('ts2').textContent=new Date(d.ts).toLocaleTimeString();
+  document.getElementById('spread').textContent='$'+d.spread.toFixed(2);
+  const im=document.getElementById('imbalance');im.textContent=(d.imbalance*100).toFixed(1)+'%';im.className='cell-val '+cls(d.imbalance);
+  const bp=document.getElementById('buy-pct');bp.textContent=(d.buyPct*100).toFixed(1)+'%';bp.className='cell-val '+(d.buyPct>0.5?'up':'dn');
+  const td=document.getElementById('tick-dir');td.textContent=d.tickDir>0?'BUY up':d.tickDir<0?'SELL dn':'FLAT';td.className='cell-val '+(d.tickDir>0?'up':d.tickDir<0?'dn':'neu');
+  const col=scoreColor(d.score);
+  document.getElementById('gauge').style.width=d.score+'%';document.getElementById('gauge').style.background=col;
+  document.getElementById('score').textContent=d.score+'/100';document.getElementById('score').style.color=col;
+  document.getElementById('verdict').textContent=d.verdict;document.getElementById('verdict').style.color=col;
+  document.getElementById('detail').textContent=d.detail;
+  const s=d.signals;
+  [['sig-ob',s.sigOB],['sig-flow',s.sigFlow],['sig-depth',s.sigDepth],['sig-spread',s.sigSpread],['sig-tick',s.sigTick],['sig-poly',s.sigPoly]].forEach(([id,v])=>{
+    const el=document.getElementById(id);el.textContent=fmtSig(v);el.className='sig-val '+cls(v);
+  });
+  const maxBid=Math.max(...d.bids.map(b=>b.s),0.001),maxAsk=Math.max(...d.asks.map(a=>a.s),0.001);
+  document.getElementById('asks-list').innerHTML=d.asks.slice(0,7).reverse().map(a=>`<div class="ob-row"><div class="ob-bar-bg" style="right:0;width:${(a.s/maxAsk*100).toFixed(0)}%;background:#D85A30;left:auto"></div><span class="ob-price dn">$${a.p.toLocaleString()}</span><span class="ob-size">${a.s.toFixed(3)}</span></div>`).join('');
+  document.getElementById('bids-list').innerHTML=d.bids.slice(0,7).map(b=>`<div class="ob-row"><div class="ob-bar-bg" style="left:0;width:${(b.s/maxBid*100).toFixed(0)}%;background:#1D9E75"></div><span class="ob-price up">$${b.p.toLocaleString()}</span><span class="ob-size">${b.s.toFixed(3)}</span></div>`).join('');
+  if(chart){chart.data.datasets[0].data=d.priceHistory;chart.data.datasets[1].data=d.flowHistory;chart.update('none');}
+  const pm=d.polyMarkets;
+  document.getElementById('p78-odds').textContent=(pm.dip78.price*100).toFixed(1)+'c';
+  document.getElementById('p78-pct').textContent=pm.dip78.implied.toFixed(1)+'%';
+  document.getElementById('p78-bar').style.width=pm.dip78.implied+'%';
+  document.getElementById('p84-odds').textContent=(pm.reach84.price*100).toFixed(1)+'c';
+  document.getElementById('p84-pct').textContent=pm.reach84.implied.toFixed(1)+'%';
+  document.getElementById('p84-bar').style.width=pm.reach84.implied+'%';
+  document.getElementById('p78-signal').textContent=d.score>=55?'Bullish momentum confirms NO on dip.':d.score<=45?'Bearish — dip risk rising, NO under pressure.':'Neutral — odds look fair.';
+  document.getElementById('p84-signal').textContent=d.score>=65?'Strong bull — $84k rising. NO at risk.':d.score<=50?'Weak momentum — $84k unlikely. Confirms NO.':'Moderate bull — monitor closely.';
+}
+let ws;
+function connect(){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(proto+'//'+location.host);
+  ws.onopen=()=>{document.getElementById('status-dot').className='dot dot-live';document.getElementById('status-txt').textContent='live';};
+  ws.onmessage=(e)=>{const d=JSON.parse(e.data);if(d.type==='snapshot')render(d);};
+  ws.onclose=()=>{document.getElementById('status-dot').className='dot dot-dead';document.getElementById('status-txt').textContent='reconnecting...';setTimeout(connect,2000);};
+  ws.onerror=()=>ws.close();
+}
+function updatePoly(key){
+  const px=key==='dip78'?'p78':'p84';
+  const pi=parseFloat(document.getElementById(px+'-price-in').value);
+  const pc=parseFloat(document.getElementById(px+'-pct-in').value);
+  const u={};u[key]={};
+  if(!isNaN(pi))u[key].price=pi/100;
+  if(!isNaN(pc))u[key].implied=pc;
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'update_poly',markets:u}));
+  fetch('/api/poly',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(u)});
+}
+initChart();connect();
+</script>
+</body>
+</html>
