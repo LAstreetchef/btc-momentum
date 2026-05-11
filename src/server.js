@@ -58,7 +58,8 @@ async function restFallback(){
     const snap=compute();if(snap)broadcast(snap);
   }catch(e){console.error('[rest]',e.message);}
 }
-setInterval(restFallback,10000);
+setInterval(restFallback,5000);
+setTimeout(restFallback,2000);
 
 function processDepth(d){
   const bids=(d.bids||d.b||[]).slice(0,10).map(b=>({p:parseFloat(b[0]),s:parseFloat(b[1])}));
