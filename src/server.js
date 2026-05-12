@@ -26,10 +26,12 @@ let state = {
 };
 
 let binanceWS=null, reconnectTimer=null;
+let diag = { connectAttempts:0, lastConnectAt:null, lastOpenAt:null, lastErrorAt:null, lastErrorMsg:null, lastCloseAt:null, lastCloseCode:null, lastCloseReason:null, lastRestErrorAt:null, lastRestErrorMsg:null };
 function connectBinance(){
   if(binanceWS) try{binanceWS.terminate();}catch(e){}
+  diag.connectAttempts++; diag.lastConnectAt=new Date().toISOString();
   binanceWS=new WebSocket('wss://stream.binance.com:9443/stream?streams=btcusdt@depth10@100ms/btcusdt@aggTrade');
-  binanceWS.on('open',()=>{state.connected=true;console.log('[binance] connected');clearTimeout(reconnectTimer);});
+  binanceWS.on('open',()=>{state.connected=true;diag.lastOpenAt=new Date().toISOString();console.log('[binance] connected');clearTimeout(reconnectTimer);});
   binanceWS.on('message',(raw)=>{
     try{
       const msg=JSON.parse(raw.toString());
@@ -42,8 +44,8 @@ function connectBinance(){
       if(snap)broadcast(snap);
     }catch(e){}
   });
-  binanceWS.on('error',()=>{state.connected=false;});
-  binanceWS.on('close',()=>{state.connected=false;reconnectTimer=setTimeout(connectBinance,3000);});
+  binanceWS.on('error',(err)=>{state.connected=false;diag.lastErrorAt=new Date().toISOString();diag.lastErrorMsg=err&&err.message?err.message:String(err);console.error('[binance] error',diag.lastErrorMsg);});
+  binanceWS.on('close',(code,reason)=>{state.connected=false;diag.lastCloseAt=new Date().toISOString();diag.lastCloseCode=code;diag.lastCloseReason=reason?reason.toString():null;console.warn('[binance] close',code,diag.lastCloseReason);reconnectTimer=setTimeout(connectBinance,3000);});
 }
 
 async function restFallback(){
@@ -57,7 +59,7 @@ async function restFallback(){
     state.price=parseFloat((await priceRes.json()).price);
     state.lastUpdate=new Date().toISOString();
     const snap=compute();if(snap)broadcast(snap);
-  }catch(e){console.error('[rest]',e.message);}
+  }catch(e){diag.lastRestErrorAt=new Date().toISOString();diag.lastRestErrorMsg=e.message;console.error('[rest]',e.message);}
 }
 setInterval(restFallback,5000);
 setTimeout(restFallback,2000);
@@ -170,6 +172,7 @@ app.use(express.static(join(__dirname,'../public')));
 app.use(express.json());
 app.get('/api/state',(req,res)=>res.json(compute()||{error:'no data yet'}));
 app.get('/health',(req,res)=>res.json({ok:true,connected:state.connected,score:state.lastScore,price:state.price}));
+app.get('/diag',(req,res)=>res.json({connected:state.connected,lastUpdate:state.lastUpdate,price:state.price,...diag}));
 app.patch('/api/poly',(req,res)=>{
   if(req.body.dip78)Object.assign(state.polyMarkets.dip78,req.body.dip78);
   if(req.body.reach84)Object.assign(state.polyMarkets.reach84,req.body.reach84);
