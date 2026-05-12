@@ -124,24 +124,19 @@ function classifyShape(question) {
 
 // pickSideForMarket — gates on forward edge, not raw score buckets.
 //
-// modelState must include `composite` (range [-1,1]) — used to compute
-// forward edge. `score` is kept in the rationale text for traceability.
-// Returns null if:
-//   - signal too weak (|composite| < 0.05)
-//   - market shape unsupported
-//   - forward edge < EDGE_PP_THRESHOLD on both sides
-//
-// Note: above-strike markets are gated by Up-side edge approximation
-// (treating "Yes" as Up directionally). A proper above-strike path
-// would use GBM with implied vol — see btc-iv.js benchmark module.
-// Tracked as a follow-up; for now we use the same momentum drift
-// projection but flag the source in the rationale.
+// LIMITED TO UP/DOWN MARKETS. Strike markets ("above $X") have a
+// no-signal fair price that depends on strike vs spot + IV, not 50/50.
+// Applying our 50/50-anchored forward-edge math to them fabricates
+// huge fake edge when decay collapses signal to zero. Strike markets
+// need a GBM-based fair price (see btc-iv.js benchmark) — tracked as
+// follow-up. For now: only Up/Down shape passes this gate.
 export function pickSideForMarket(modelState, candidate) {
   const composite = typeof modelState === 'number'
     ? null  // legacy callers passed `score` directly; reject
     : (modelState && typeof modelState.composite === 'number' ? modelState.composite : null);
   const score = modelState && typeof modelState.score === 'number' ? modelState.score : null;
   if (composite == null || Math.abs(composite) < 0.05) return null;
+  if (!candidate.shape || candidate.shape.kind !== 'updown') return null;
 
   let outcomes, prices;
   try { outcomes = JSON.parse(candidate.market.outcomes); } catch { return null; }
@@ -163,12 +158,9 @@ export function pickSideForMarket(modelState, candidate) {
   if (!best) return null;
 
   const verdict = composite > 0 ? 'BULLISH' : 'BEARISH';
-  const note = candidate.shape.kind === 'above'
-    ? ` on > $${candidate.shape.strike}`
-    : '';
   return {
     side: best.side,
-    rationale: `${verdict} composite ${composite.toFixed(2)} (score ${score ?? '?'}) · +${best.fe.edge_pp.toFixed(1)}pp edge · lead ${best.fe.lead_min.toFixed(0)}min → ${best.side}${note}`,
+    rationale: `${verdict} composite ${composite.toFixed(2)} (score ${score ?? '?'}) · +${best.fe.edge_pp.toFixed(1)}pp edge · lead ${best.fe.lead_min.toFixed(0)}min → ${best.side}`,
     forwardEdge: best.fe,
   };
 }
