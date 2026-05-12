@@ -78,6 +78,9 @@ async function captureNew(model) {
     const entryPrice = parseFloat(prices[sideIdx]);
     if (!Number.isFinite(entryPrice) || entryPrice <= 0) continue;
     if (entryPrice >= 0.95 || entryPrice <= 0.05) continue;
+    // Full feature vector captured at prediction time so Phase 2 can
+    // re-fit weights (not just thresholds) against realized outcomes.
+    const sig = model.signals || {};
     toInsert.push({
       surfaced_at: new Date().toISOString(),
       condition_id: c.market.conditionId,
@@ -93,6 +96,20 @@ async function captureNew(model) {
       end_date: c.market.endDate,
       rationale: side.rationale,
       resolved: false,
+      model_imbalance: model.imbalance ?? null,
+      model_depth_ratio: model.depthRatio ?? null,
+      model_buy_pct: model.buyPct ?? null,
+      model_tick_dir: model.tickDir ?? null,
+      model_spread: model.spread ?? null,
+      model_spread_pct: model.spreadPct ?? null,
+      model_sig_ob: sig.sigOB ?? null,
+      model_sig_flow: sig.sigFlow ?? null,
+      model_sig_spread: sig.sigSpread ?? null,
+      model_sig_depth: sig.sigDepth ?? null,
+      model_sig_tick: sig.sigTick ?? null,
+      model_sig_poly: sig.sigPoly ?? null,
+      model_ref_px: model.refPx ?? null,
+      model_ref_spread: model.refSpread ?? null,
     });
   }
   if (toInsert.length) {
