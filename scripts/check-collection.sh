@@ -55,16 +55,61 @@ curl -s -H "$H1" -H "$H2" \
 echo
 echo "=== resolution stats ==="
 curl -s -H "$H1" -H "$H2" \
-  "$SUPA_URL/rest/v1/paper_trades?select=resolved,realized_pnl_usd" \
+  "$SUPA_URL/rest/v1/paper_trades?select=resolved,realized_pnl_usd,model_verdict,model_score" \
   | python3 -c "
 import json,sys
+from collections import defaultdict
 rows = json.load(sys.stdin)
 total = len(rows)
-res = [r for r in rows if r['resolved']]
-won = [r for r in res if r['realized_pnl_usd'] is not None and float(r['realized_pnl_usd']) > 0]
-pnl = sum(float(r['realized_pnl_usd']) for r in res if r['realized_pnl_usd'] is not None)
+res = [r for r in rows if r['resolved'] and r['realized_pnl_usd'] is not None]
+won = [r for r in res if float(r['realized_pnl_usd']) > 0]
+pnl = sum(float(r['realized_pnl_usd']) for r in res)
 print(f'  resolved: {len(res)} / {total}')
-if res:
-    print(f'  hit rate: {len(won)}/{len(res)} = {len(won)/len(res)*100:.1f}%')
-    print(f'  total p&l: \${pnl:+.2f}')
+if not res: sys.exit()
+print(f'  hit rate: {len(won)}/{len(res)} = {len(won)/len(res)*100:.1f}%')
+print(f'  total p&l: \${pnl:+.2f}')
+print()
+
+# By verdict
+g = defaultdict(lambda: {'n':0,'won':0,'pnl':0.0})
+for r in res:
+    v = r.get('model_verdict') or '?'
+    p = float(r['realized_pnl_usd'])
+    g[v]['n'] += 1
+    if p > 0: g[v]['won'] += 1
+    g[v]['pnl'] += p
+print('  by verdict:')
+print(f'    {\"verdict\":<12} {\"n\":>4} {\"hit%\":>7} {\"pnl\":>10} {\"ROI%\":>8}')
+order = ['BEARISH','MILD BEAR','NEUTRAL','MILD BULL','BULLISH']
+for v in order + [k for k in g if k not in order]:
+    if v not in g: continue
+    d = g[v]
+    hp = d['won']/d['n']*100
+    roi = d['pnl']/(d['n']*10)*100
+    print(f'    {v:<12} {d[\"n\"]:>4} {hp:>6.1f}% \${d[\"pnl\"]:>+8.2f} {roi:>+7.1f}%')
+print()
+
+# By score bucket
+def bucket(s):
+    if s is None: return '??'
+    if s < 30: return '00-29 deep bear'
+    if s < 40: return '30-39 bear'
+    if s < 60: return '40-59 neutral'
+    if s < 70: return '60-69 mild bull'
+    if s < 80: return '70-79 bull'
+    return '80-100 deep bull'
+gb = defaultdict(lambda: {'n':0,'won':0,'pnl':0.0})
+for r in res:
+    b = bucket(r.get('model_score'))
+    p = float(r['realized_pnl_usd'])
+    gb[b]['n'] += 1
+    if p > 0: gb[b]['won'] += 1
+    gb[b]['pnl'] += p
+print('  by score bucket:')
+print(f'    {\"bucket\":<18} {\"n\":>4} {\"hit%\":>7} {\"pnl\":>10} {\"ROI%\":>8}')
+for b in sorted(gb.keys()):
+    d = gb[b]
+    hp = d['won']/d['n']*100
+    roi = d['pnl']/(d['n']*10)*100
+    print(f'    {b:<18} {d[\"n\"]:>4} {hp:>6.1f}% \${d[\"pnl\"]:>+8.2f} {roi:>+7.1f}%')
 "
