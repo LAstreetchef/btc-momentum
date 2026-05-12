@@ -66,7 +66,7 @@ async function captureNew(model) {
   const candidates = await fetchCandidateMarkets();
   const toInsert = [];
   for (const c of candidates) {
-    const side = pickSideForMarket(model.score, c);
+    const side = pickSideForMarket(model, c);
     if (!side) continue;
     const key = `${c.market.conditionId}:${side.side}`;
     if (seen.has(key)) continue;
