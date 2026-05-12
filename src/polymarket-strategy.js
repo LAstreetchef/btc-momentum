@@ -101,7 +101,16 @@ export async function fetchCandidateMarkets() {
         if (minutes < MIN_HORIZON_MIN || minutes > MAX_HORIZON_MIN) continue;
         const shape = classifyShape(m.question);
         if (!shape) continue;
-        out.push({ market: m, minutes, shape });
+        // Mid-window guard: if the resolution window has already started,
+        // our 50/50 forward-edge prior is invalid (the market price already
+        // reflects in-window price action that our model can't see).
+        // Only target markets where the window starts in the future.
+        if (shape.kind === 'updown') {
+          const windowMin = parseWindowMinutes(m.question);
+          if (windowMin == null) continue;       // unparseable — defensive skip
+          if (minutes <= windowMin) continue;    // window already in progress
+        }
+        out.push({ market: m, minutes, shape, windowMin: shape.kind === 'updown' ? parseWindowMinutes(m.question) : null });
         hitsInPage++;
       }
       if (hitsInPage === 0 && off > 0) break;
@@ -119,6 +128,38 @@ function classifyShape(question) {
     const strike = parseInt(mAbove[1].replace(/,/g, ''), 10);
     if (Number.isFinite(strike) && strike > 1000) return { kind: 'above', strike };
   }
+  return null;
+}
+
+// Parse the resolution-window duration from an Up/Down market title.
+// We need this to detect "mid-window" markets where BTC has already
+// moved during the bet window, breaking our 50/50-anchored forward-edge
+// fair-price assumption.
+//
+// Patterns seen:
+//   "Bitcoin Up or Down - May 12, 5PM ET"            → 60 min (1h window)
+//   "Bitcoin Up or Down - May 12, 5:30PM-5:45PM ET"  → 15 min
+//   "Bitcoin Up or Down - May 12, 4:15PM-4:20PM ET"  → 5 min
+//   "Bitcoin Up or Down - May 12, 4:00PM-8:00PM ET"  → 240 min
+//
+// Returns minutes (positive integer) or null if the title doesn't match.
+export function parseWindowMinutes(title) {
+  if (!title) return null;
+  const toMin = (h, m, ampm) => {
+    let hr = parseInt(h, 10) % 12;
+    if (ampm.toUpperCase() === 'PM') hr += 12;
+    return hr * 60 + parseInt(m || '0', 10);
+  };
+  // Range: "5:30PM-5:45PM ET" or "4:00PM-8:00PM ET" or "5PM-6PM ET"
+  const range = title.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if (range) {
+    const startMin = toMin(range[1], range[2], range[3]);
+    const endMin = toMin(range[4], range[5], range[6]);
+    const diff = endMin - startMin;
+    return diff > 0 ? diff : diff + 24 * 60;
+  }
+  // Single hour: "5PM ET" → 1-hour window resolving at the *next* hour boundary
+  if (/\b\d{1,2}(?::\d{2})?\s*(AM|PM)\s+ET\b/i.test(title)) return 60;
   return null;
 }
 
