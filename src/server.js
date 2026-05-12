@@ -30,7 +30,7 @@ let diag = { connectAttempts:0, lastConnectAt:null, lastOpenAt:null, lastErrorAt
 function connectBinance(){
   if(binanceWS) try{binanceWS.terminate();}catch(e){}
   diag.connectAttempts++; diag.lastConnectAt=new Date().toISOString();
-  binanceWS=new WebSocket('wss://stream.binance.com:9443/stream?streams=btcusdt@depth10@100ms/btcusdt@aggTrade');
+  binanceWS=new WebSocket('wss://stream.binance.us:9443/stream?streams=btcusd@depth10@100ms/btcusd@aggTrade');
   binanceWS.on('open',()=>{state.connected=true;diag.lastOpenAt=new Date().toISOString();console.log('[binance] connected');clearTimeout(reconnectTimer);});
   binanceWS.on('message',(raw)=>{
     try{
@@ -52,8 +52,8 @@ async function restFallback(){
   if(state.connected)return;
   try{
     const [depthRes,priceRes]=await Promise.all([
-      fetch('https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=10'),
-      fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
+      fetch('https://api.binance.us/api/v3/depth?symbol=BTCUSD&limit=10'),
+      fetch('https://api.binance.us/api/v3/ticker/price?symbol=BTCUSD')
     ]);
     processDepth(await depthRes.json());
     state.price=parseFloat((await priceRes.json()).price);
