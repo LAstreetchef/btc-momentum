@@ -79,6 +79,66 @@ setInterval(() => {
   }
 }, 10000);
 
+// Coinbase Advanced Trade WS — Chainlink-aligned reference price.
+// Binance.US drives all microstructure signals (depth, flow, imbalance);
+// Coinbase provides the price reference that closely tracks the
+// Chainlink BTC/USD data stream Polymarket resolves on. Divergence
+// between the two is exposed in /api/state as refSpread.
+state.refPx = null;
+state.refLastUpdate = null;
+state.refConnected = false;
+let coinbaseWS = null, coinbaseReconnectTimer = null;
+function connectCoinbase() {
+  if (coinbaseWS) try { coinbaseWS.terminate(); } catch (e) {}
+  diag.cbConnectAttempts = (diag.cbConnectAttempts || 0) + 1;
+  diag.cbLastConnectAt = new Date().toISOString();
+  coinbaseWS = new WebSocket('wss://advanced-trade-ws.coinbase.com');
+  coinbaseWS.on('open', () => {
+    state.refConnected = true;
+    diag.cbLastOpenAt = new Date().toISOString();
+    coinbaseWS.send(JSON.stringify({ type: 'subscribe', channel: 'ticker', product_ids: ['BTC-USD'] }));
+    console.log('[coinbase] connected + subscribed BTC-USD ticker');
+    clearTimeout(coinbaseReconnectTimer);
+  });
+  coinbaseWS.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.channel !== 'ticker' || !Array.isArray(msg.events)) return;
+      for (const ev of msg.events) {
+        if (!Array.isArray(ev.tickers)) continue;
+        for (const t of ev.tickers) {
+          if (t.product_id === 'BTC-USD' && t.price) {
+            state.refPx = parseFloat(t.price);
+            state.refLastUpdate = new Date().toISOString();
+          }
+        }
+      }
+    } catch (e) {}
+  });
+  coinbaseWS.on('error', (err) => {
+    state.refConnected = false;
+    diag.cbLastErrorAt = new Date().toISOString();
+    diag.cbLastErrorMsg = err && err.message ? err.message : String(err);
+    console.error('[coinbase] error', diag.cbLastErrorMsg);
+  });
+  coinbaseWS.on('close', (code, reason) => {
+    state.refConnected = false;
+    diag.cbLastCloseAt = new Date().toISOString();
+    diag.cbLastCloseCode = code;
+    coinbaseReconnectTimer = setTimeout(connectCoinbase, 3000);
+  });
+}
+setInterval(() => {
+  if (!state.refLastUpdate) return;
+  const ageMs = Date.now() - new Date(state.refLastUpdate).getTime();
+  if (ageMs > 30000) {
+    console.warn('[coinbase] silent for ' + (ageMs / 1000).toFixed(0) + 's — reconnecting');
+    state.refConnected = false;
+    try { coinbaseWS && coinbaseWS.terminate(); } catch (e) {}
+    connectCoinbase();
+  }
+}, 10000);
+
 function processDepth(d){
   const bids=(d.bids||d.b||[]).slice(0,10).map(b=>({p:parseFloat(b[0]),s:parseFloat(b[1])}));
   const asks=(d.asks||d.a||[]).slice(0,10).map(a=>({p:parseFloat(a[0]),s:parseFloat(a[1])}));
@@ -125,7 +185,9 @@ function compute(){
   const [verdict,detail]=getVerdict(score);
   state.lastScore=score;state.lastVerdict=verdict;
   maybeLog(score,verdict,composite,imbalance,buyPct,spreadPct);
+  const refSpread = (state.refPx != null && state.price != null) ? parseFloat((state.refPx - state.price).toFixed(2)) : null;
   return{type:'snapshot',ts:state.lastUpdate,price:state.price,prevPrice:state.prevPrice,
+    binancePx:state.price,refPx:state.refPx,refSpread,refConnected:state.refConnected,refLastUpdate:state.refLastUpdate,
     spread:parseFloat(spread.toFixed(2)),spreadPct:parseFloat(spreadPct.toFixed(4)),
     imbalance:parseFloat(imbalance.toFixed(4)),depthRatio:parseFloat(depthRatio.toFixed(4)),
     buyPct:parseFloat(buyPct.toFixed(4)),tickDir:state.tickDir,score,verdict,detail,
@@ -171,12 +233,12 @@ wss.on('connection',(ws)=>{
 app.use(express.static(join(__dirname,'../public')));
 app.use(express.json());
 app.get('/api/state',(req,res)=>res.json(compute()||{error:'no data yet'}));
-app.get('/health',(req,res)=>res.json({ok:true,connected:state.connected,score:state.lastScore,price:state.price}));
-app.get('/diag',(req,res)=>res.json({connected:state.connected,lastUpdate:state.lastUpdate,price:state.price,...diag}));
+app.get('/health',(req,res)=>res.json({ok:true,connected:state.connected,refConnected:state.refConnected,score:state.lastScore,binancePx:state.price,refPx:state.refPx}));
+app.get('/diag',(req,res)=>res.json({connected:state.connected,refConnected:state.refConnected,lastUpdate:state.lastUpdate,refLastUpdate:state.refLastUpdate,binancePx:state.price,refPx:state.refPx,...diag}));
 app.patch('/api/poly',(req,res)=>{
   if(req.body.dip78)Object.assign(state.polyMarkets.dip78,req.body.dip78);
   if(req.body.reach84)Object.assign(state.polyMarkets.reach84,req.body.reach84);
   broadcast({type:'poly_update',polyMarkets:state.polyMarkets});
   res.json({ok:true,polyMarkets:state.polyMarkets});
 });
-server.listen(PORT,()=>{console.log('[server] :'+PORT);connectBinance();});
+server.listen(PORT,()=>{console.log('[server] :'+PORT);connectBinance();connectCoinbase();});
