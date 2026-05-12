@@ -25,19 +25,25 @@ async function listOpen() {
   return data || [];
 }
 
-async function listAllKeys() {
-  // Just (condition_id, side) pairs for dedup. Pagination if needed.
-  const out = new Set();
+async function listCaptureCounts() {
+  // Returns Map((cond_id:side) → count of prior captures). Used to set
+  // capture_seq on new rows so we can analyze add-on behavior in Phase 2.
+  // No longer dedups — every capture is recorded so we have data on
+  // what pyramiding would have done.
+  const counts = new Map();
   let from = 0;
   while (true) {
     const { data, error } = await supabase.from(TABLE).select('condition_id,side').range(from, from + 999);
-    if (error) throw new Error('listAllKeys: ' + error.message);
+    if (error) throw new Error('listCaptureCounts: ' + error.message);
     if (!data || !data.length) break;
-    for (const r of data) out.add(`${r.condition_id}:${r.side}`);
+    for (const r of data) {
+      const k = `${r.condition_id}:${r.side}`;
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
     if (data.length < 1000) break;
     from += 1000;
   }
-  return out;
+  return counts;
 }
 
 async function resolveOpen() {
@@ -62,14 +68,12 @@ async function resolveOpen() {
 }
 
 async function captureNew(model) {
-  const seen = await listAllKeys();
+  const captureCounts = await listCaptureCounts();
   const candidates = await fetchCandidateMarkets();
   const toInsert = [];
   for (const c of candidates) {
     const side = pickSideForMarket(model, c);
     if (!side) continue;
-    const key = `${c.market.conditionId}:${side.side}`;
-    if (seen.has(key)) continue;
     let outcomes, prices;
     try { outcomes = JSON.parse(c.market.outcomes); } catch { continue; }
     try { prices = JSON.parse(c.market.outcomePrices); } catch { continue; }
@@ -78,6 +82,8 @@ async function captureNew(model) {
     const entryPrice = parseFloat(prices[sideIdx]);
     if (!Number.isFinite(entryPrice) || entryPrice <= 0) continue;
     if (entryPrice >= 0.95 || entryPrice <= 0.05) continue;
+    const key = `${c.market.conditionId}:${side.side}`;
+    const captureSeq = (captureCounts.get(key) || 0) + 1;
     // Full feature vector captured at prediction time so Phase 2 can
     // re-fit weights (not just thresholds) against realized outcomes.
     const sig = model.signals || {};
@@ -110,7 +116,9 @@ async function captureNew(model) {
       model_sig_poly: sig.sigPoly ?? null,
       model_ref_px: model.refPx ?? null,
       model_ref_spread: model.refSpread ?? null,
+      capture_seq: captureSeq,
     });
+    captureCounts.set(key, captureSeq);  // track for subsequent picks in same tick
   }
   if (toInsert.length) {
     const { error } = await supabase.from(TABLE).insert(toInsert);
