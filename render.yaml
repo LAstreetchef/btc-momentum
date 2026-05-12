@@ -13,3 +13,18 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+
+  - type: cron
+    name: btc-momentum-paper
+    env: node
+    region: oregon
+    buildCommand: npm install
+    startCommand: node src/paper-trader.js
+    schedule: "*/5 * * * *"
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: BTC_MOMENTUM_URL
+        value: https://btc-momentum.onrender.com
