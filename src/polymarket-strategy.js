@@ -31,9 +31,14 @@ export async function fetchModelState(modelUrl) {
 }
 
 export async function fetchCandidateMarkets() {
+  // Gamma keeps stale-resolved markets flagged active=true for hours/days
+  // after their endDate. Without end_date_min the endDate-asc sort
+  // returns ~500 5-month-old "active" markets and never reaches today's
+  // 5-min windows. end_date_min filters them out server-side.
+  const nowIso = new Date().toISOString();
   const queries = [
-    'closed=false&active=true&limit=500&order=volume24hr&ascending=false',
-    'closed=false&active=true&limit=500&order=endDate&ascending=true',
+    `closed=false&active=true&end_date_min=${encodeURIComponent(nowIso)}&limit=500&order=volume24hr&ascending=false`,
+    `closed=false&active=true&end_date_min=${encodeURIComponent(nowIso)}&limit=500&order=endDate&ascending=true`,
   ];
   const out = [];
   const seen = new Set();
